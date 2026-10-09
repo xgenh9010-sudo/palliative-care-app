@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบคำนวณยา Palliative Care - Firebase Version</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Firebase SDK (v8 Compat) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+    <style>
+        /* รวม CSS หลัก */
+        :root {
+            --sidebar-bg: #0B132B; --sidebar-hover: #1c2541; --primary-blue: #2563EB;
+            --bg-main: #F8FAFC; --card-bg: #FFFFFF; --input-bg: #F1F5F9; --text-main: #1E293B; --border-color: #E2E8F0;
+        }
+        body { font-family: 'Prompt', 'Sarabun', sans-serif; background-color: var(--bg-main); color: var(--text-main); margin: 0; }
+        
+        /* Layout & Sidebar */
+        .app-container { display: flex; min-height: 100vh; }
+        .sidebar { width: 260px; background-color: var(--sidebar-bg); position: fixed; top: 0; bottom: 0; left: 0; z-index: 1000; box-shadow: 4px 0 10px rgba(0,0,0,0.05); }
+        .main-content { flex: 1; margin-left: 260px; padding: 1.5rem 2.5rem; max-width: calc(100vw - 260px); }
+        .sidebar-menu .nav-link { color: #94a3b8; font-weight: 400; transition: 0.2s; }
+        .sidebar-menu .nav-link:hover { color: #ffffff; background-color: var(--sidebar-hover); }
+        .sidebar-menu .nav-link.active { color: #ffffff !important; background-color: var(--primary-blue); font-weight: 500; }
+        .custom-card { border-radius: 16px; background-color: var(--card-bg); border: 0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        .custom-input { background-color: var(--input-bg); border: 1px solid transparent; border-radius: 10px; padding: 0.65rem 1rem; }
+        .custom-input:focus { background-color: #ffffff; border-color: var(--primary-blue); box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1); }
+        
+        /* Login Page Specifics */
+        #login-view { display: flex; min-height: 100vh; width: 100%; background: #eef1f5; }
+        .login-left { flex: 1 1 50%; background: linear-gradient(135deg, var(--sidebar-bg) 0%, #123a7a 45%, var(--primary-blue) 100%); display: flex; align-items: center; justify-content: center; padding: 48px; color: white;}
+        .login-right { flex: 1 1 50%; display: flex; align-items: center; justify-content: center; padding: 32px; }
+        .login-card { width: 100%; max-width: 420px; background: white; border-radius: 16px; padding: 36px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); }
+        
+        /* Print Styles */
+        @media print {
+            body * { visibility: hidden; }
+            #formalPrintDoc, #formalPrintDoc * { visibility: visible; }
+            #formalPrintDoc { position: absolute; left: 0; top: 0; width: 100%; }
+            .no-print { display: none !important; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ============ VIEWS CONTROLLER ============ -->
+<div id="loading-view" class="d-flex justify-content-center align-items-center vh-100 bg-light w-100 position-fixed" style="z-index: 9999;">
+    <div class="spinner-border text-primary" role="status"></div>
+</div>
+
+<!-- ============ LOGIN VIEW ============ -->
+<div id="login-view" class="d-none">
+    <div class="login-left d-none d-md-flex">
+        <div class="text-center">
+            <h1 class="fw-bold mb-3">Narathiwat Hospital</h1>
+            <p class="fs-5">Palliative Care Management System</p>
+        </div>
+    </div>
+    <div class="login-right">
+        <div class="login-card">
+            <h4 class="fw-bold mb-1 text-primary text-center">เข้าสู่ระบบ</h4>
+            <p class="text-muted text-center mb-4">เข้าสู่ระบบผ่าน Firebase Auth</p>
+            <form id="loginForm">
+                <div class="mb-3">
+                    <label class="form-label small fw-medium">อีเมล (Email)</label>
+                    <input type="email" id="loginEmail" class="form-control custom-input" required>
+                </div>
+                <div class="mb-4">
+                    <label class="form-label small fw-medium">รหัสผ่าน (Password)</label>
+                    <input type="password" id="loginPassword" class="form-control custom-input" required>
+                </div>
+                <div id="loginAlert" class="alert alert-danger d-none small"></div>
+                <button type="submit" class="btn btn-primary w-100 py-2 rounded-3 fw-bold" id="loginBtn">เข้าสู่ระบบ</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ============ APP VIEW (MAIN DASHBOARD) ============ -->
+<div id="app-view" class="app-container d-none">
+    <!-- Sidebar -->
+    <aside class="sidebar d-flex flex-column justify-content-between no-print">
+        <div>
+            <div class="p-4 border-bottom border-dark-subtle text-white text-center">
+                <h6 class="mb-0 fw-bold tracking-wide">Narathiwat</h6>
+                <small class="text-secondary">PALLIATIVE CARE</small>
+            </div>
+            <div class="user-profile d-flex align-items-center gap-3 px-3 py-3 my-2 text-white">
+                <div class="rounded-circle bg-primary d-flex align-items-center justify-content-center fw-bold" style="width: 40px; height: 40px;" id="sidebarUserAvatar">U</div>
+                <div>
+                    <div class="fw-medium small" id="sidebarUserName">Loading...</div>
+                    <span class="badge bg-primary" id="sidebarUserRole">USER</span>
+                </div>
+            </div>
+            <ul class="nav flex-column sidebar-menu px-2 gap-1">
+                <li class="nav-item"><a class="nav-link active rounded-3 p-2" href="#assess-pane" data-bs-toggle="tab" id="nav-assess"><i class="bi bi-stethoscope me-2"></i>ประเมินการรักษา</a></li>
+                <li class="nav-item"><a class="nav-link rounded-3 p-2" href="#archive-pane" data-bs-toggle="tab" id="nav-archive" onclick="loadArchive()"><i class="bi bi-folder2-open me-2"></i>คลังประวัติผู้ป่วย</a></li>
+                <li class="nav-item d-none" id="nav-users-item"><a class="nav-link rounded-3 p-2" href="#users-pane" data-bs-toggle="tab" id="nav-users" onclick="loadUsers()"><i class="bi bi-people me-2"></i>จัดการผู้ใช้งาน</a></li>
+            </ul>
+        </div>
+        <div class="p-3">
+            <button class="btn btn-danger w-100" onclick="logoutUser()">ออกจากระบบ</button>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <header class="d-flex justify-content-between align-items-center pb-3 mb-4 border-bottom no-print">
+            <h4 class="mb-0 fw-bold text-dark" id="pageTitle">ประเมินแผนการรักษา</h4>
+        </header>
+
+        <div class="tab-content">
+            <!-- 1. ประเมินการรักษา -->
+            <div class="tab-pane fade show active" id="assess-pane">
+                <div class="card custom-card mb-4">
+                    <div class="card-body">
+                        <form id="assessmentForm">
+                            <h6 class="fw-bold mb-3">1. ข้อมูลพื้นฐานผู้ป่วย</h6>
+                            <div class="row g-3 mb-4">
+                                <div class="col-md-4">
+                                    <label class="form-label small">ID บัตรประชาชน *</label>
+                                    <input type="text" class="form-control custom-input" id="id_card" required maxlength="13">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label small">น้ำหนัก (kg) *</label>
+                                    <input type="number" step="0.1" class="form-control custom-input" id="weight" required>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label small">อายุ (ปี) *</label>
+                                    <input type="number" class="form-control custom-input" id="age" required>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label small">ค่าไต (CrCl) *</label>
+                                    <input type="number" step="0.1" class="form-control custom-input" id="crcl" required>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label small">PPS Score (%) *</label>
+                                    <select class="form-select custom-input" id="pps_score" required>
+                                        <option value="10">10% - ช่วยเหลือตัวเองไม่ได้เลย</option>
+                                        <option value="30">30% - นอนบนเตียง ช่วยตัวเองไม่ได้</option>
+                                        <option value="50">50% - นั่ง/นอนเป็นส่วนใหญ่</option>
+                                        <option value="70" selected>70% - ดูแลตัวเองได้</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label small">Pain Score (0-10) *</label>
+                                    <input type="number" class="form-control custom-input" id="pain_score" min="0" max="10" required>
+                                </div>
+                            </div>
+                            
+                            <h6 class="fw-bold mb-3">2. ประเภทยาหลัก</h6>
+                            <div class="mb-4">
+                                <select class="form-select custom-input" id="drug_type" required>
+                                    <option value="morphine_oral">Morphine แบบกิน (Oral)</option>
+                                    <option value="morphine_iv">Morphine แบบฉีด (IV/SC)</option>
+                                    <option value="fentanyl_iv">Fentanyl แบบฉีด (IV/SC)</option>
+                                    <option value="fentanyl_patch">Fentanyl แบบแผ่นแปะ (Patch)</option>
+                                </select>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary px-4 fw-bold">ประมวลผลด้วย AI (GLM + Guidelines)</button>
+                        </form>
+                    </div>
+                </div>
+
+                <div id="resultCard" class="card custom-card d-none border-primary border">
+                    <div class="card-header bg-primary text-white"><h6 class="mb-0">แผนการรักษา (Treatment Plan)</h6></div>
+                    <div class="card-body" id="resultContent"></div>
+                </div>
+            </div>
+
+            <!-- 2. คลังประวัติ (แบบย่อ) -->
+            <div class="tab-pane fade" id="archive-pane">
+                <div class="card custom-card">
+                    <div class="card-body">
+                        <div id="archiveContent">กำลังโหลด...</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 3. จัดการผู้ใช้งาน -->
+            <div class="tab-pane fade" id="users-pane">
+                <div class="card custom-card">
+                    <div class="card-body">
+                        <h6 class="fw-bold">เพิ่มผู้ใช้งาน (ต้องเป็น Admin)</h6>
+                        <form id="addUserForm" class="row g-3">
+                            <div class="col-md-4"><input type="email" id="newEmail" class="form-control custom-input" placeholder="อีเมล" required></div>
+                            <div class="col-md-4"><input type="password" id="newPass" class="form-control custom-input" placeholder="รหัสผ่าน" required></div>
+                            <div class="col-md-4"><select id="newRole" class="form-select custom-input"><option value="user">บุคลากร</option><option value="admin">Admin</option></select></div>
+                            <div class="col-12"><button type="submit" class="btn btn-success">เพิ่มบัญชี</button></div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<div id="formalPrintDoc"></div>
+
+<script>
+    // ----------------------------------------------------
+    // 1. นำ Firebase Config ของคุณมาวางตรงนี้
+    // ----------------------------------------------------
+    const firebaseConfig = {
+        apiKey: "YOUR_API_KEY",
+        authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+        projectId: "YOUR_PROJECT_ID",
+        storageBucket: "YOUR_PROJECT_ID.appspot.com",
+        messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+        appId: "YOUR_APP_ID"
+    };
+
+    // Initialize Firebase
+    if (!firebase.apps.length) {
+        firebase.initializeApp(firebaseConfig);
+    }
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    // สร้างแอปพลิเคชันที่สองสำหรับ Admin สมัครยูสเซอร์ใหม่โดยที่ตัวเองไม่หลุดล็อคอิน
+    const secondaryApp = firebase.initializeApp(firebaseConfig, "Secondary");
+
+    let currentUserDoc = null;
+
+    // ----------------------------------------------------
+    // 2. Authentication Flow (ระบบล็อคอิน/ล็อคเอาท์)
+    // ----------------------------------------------------
+    auth.onAuthStateChanged(user => {
+        document.getElementById('loading-view').classList.add('d-none');
+        if (user) {
+            document.getElementById('login-view').classList.add('d-none');
+            document.getElementById('app-view').classList.remove('d-none');
+            
+            // โหลดสิทธิ์ (Role) จาก Firestore
+            db.collection('users').doc(user.uid).get().then(doc => {
+                if (doc.exists) {
+                    currentUserDoc = doc.data();
+                    document.getElementById('sidebarUserName').innerText = currentUserDoc.email;
+                    document.getElementById('sidebarUserRole').innerText = currentUserDoc.role.toUpperCase();
+                    if(currentUserDoc.role === 'admin') {
+                        document.getElementById('nav-users-item').classList.remove('d-none');
+                    }
+                } else {
+                    // หากล็อคอินครั้งแรกแล้วไม่มีข้อมูล ให้สร้างเป็น user ธรรมดา
+                    db.collection('users').doc(user.uid).set({ email: user.email, role: 'user' });
+                    document.getElementById('sidebarUserName').innerText = user.email;
+                }
+            });
+        } else {
+            document.getElementById('app-view').classList.add('d-none');
+            document.getElementById('login-view').classList.remove('d-none');
+        }
+    });
+
+    document.getElementById('loginForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const email = document.getElementById('loginEmail').value;
+        const pass = document.getElementById('loginPassword').value;
+        auth.signInWithEmailAndPassword(email, pass).catch(err => {
+            const alertBox = document.getElementById('loginAlert');
+            alertBox.innerText = "ล็อคอินล้มเหลว: " + err.message;
+            alertBox.classList.remove('d-none');
+        });
+    });
+
+    function logoutUser() {
+        if(confirm('ต้องการออกจากระบบ?')) auth.signOut();
+    }
+
+    // ----------------------------------------------------
+    // 3. Clinical Logic (แปลงจาก PHP เดิม)
+    // ----------------------------------------------------
+    function predictMortalityGLM(age, pps_score, pain_score) {
+        // อิงจาก Hybrid GLM เดิม (ตัด array ยาวๆ ออกในตัวอย่างนี้ แต่สูตรหลักยังอยู่)
+        let logit = -4.500;
+        let factors = [];
+
+        let pps_weight = 0.0;
+        if (pps_score <= 20) pps_weight = 8.5;
+        else if (pps_score <= 30) pps_weight = 5.0;
+        else if (pps_score <= 40) pps_weight = 2.5;
+
+        if (pps_weight > 0) {
+            logit += pps_weight;
+            factors.push(`PPS ${pps_score}% (+${pps_weight})`);
+        }
+        if (pain_score >= 8) { logit += 2.0; factors.push(`Pain ${pain_score} (+2.0)`); }
+        if (age >= 75) { logit += 0.8; factors.push(`Age ${age} (+0.8)`); }
+
+        let prob = 1 / (1 + Math.exp(-logit));
+        let percent = Math.round(prob * 10000) / 100;
+        return {
+            probability: percent,
+            class: (percent >= 50.0) ? 'Yes (เสี่ยงสูง)' : 'No (เสี่ยงต่ำ)',
+            factors: factors
+        };
+    }
+
+    function calculateTreatmentPlan(weight, crcl, pain_score, drug_type) {
+        let base_dose = (pain_score >= 7) ? 40 : (pain_score >= 4 ? 30 : 20);
+        let renal_percent = 100;
+        let renal_status = "ปกติ";
+
+        if (crcl < 10) {
+            renal_percent = 50; renal_status = "GFR < 10 ห้ามใช้ Morphine! ปรับเป็น Fentanyl 50%";
+            if(drug_type.includes('morphine')) drug_type = 'fentanyl_patch';
+        } else if (crcl <= 50) {
+            renal_percent = drug_type.includes('fentanyl') ? 75 : 50;
+            renal_status = `ไตเสื่อม ลดโดสเหลือ ${renal_percent}%`;
+        }
+
+        let adjusted_dose = Math.round((base_dose * renal_percent) / 100);
+        let prn_dose = Math.round(adjusted_dose * 0.15 * 10)/10;
+        let atc = "", prn = "", unit = "mg";
+
+        if(drug_type === 'morphine_oral') {
+            unit = "mg"; atc = `MST 10mg ทานตามโดสรวม ${adjusted_dose}mg/วัน`; prn = `MO Syrup ${prn_dose}mg PRN ทุก 4 ชม.`;
+        } else if (drug_type === 'fentanyl_patch') {
+            unit = "mcg/hr"; let patch = (adjusted_dose > 60) ? 25 : 12; adjusted_dose = patch;
+            atc = `Fentanyl Patch ${patch} mcg/hr แปะ 72 ชม.`; prn = `Fentanyl IV ${prn_dose}mcg PRN`;
+        } // เพิ่มเคสอื่นๆ ตาม PHP เดิมได้เลย
+
+        return { adjusted_daily_dose: adjusted_dose, prn_dose, atc_instruction: atc, prn_instruction: prn, unit, renal_status };
+    }
+
+    // ----------------------------------------------------
+    // 4. บันทึกประเมินลง Firestore Database
+    // ----------------------------------------------------
+    document.getElementById('assessmentForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        
+        let id_card = document.getElementById('id_card').value;
+        let weight = parseFloat(document.getElementById('weight').value);
+        let age = parseInt(document.getElementById('age').value);
+        let crcl = parseFloat(document.getElementById('crcl').value);
+        let pps = parseInt(document.getElementById('pps_score').value);
+        let pain = parseInt(document.getElementById('pain_score').value);
+        let drug = document.getElementById('drug_type').value;
+
+        // คำนวณ
+        let plan = calculateTreatmentPlan(weight, crcl, pain, drug);
+        let glm = predictMortalityGLM(age, pps, pain);
+
+        let assessmentData = {
+            id_card: id_card,
+            weight: weight, age: age, crcl: crcl, pps_score: pps, pain_score: pain, drug_type: drug,
+            plan: plan,
+            glm: glm,
+            created_at: firebase.firestore.FieldValue.serverTimestamp(),
+            created_by: auth.currentUser.email
+        };
+
+        // เซฟลง Firestore
+        db.collection('assessments').add(assessmentData).then(docRef => {
+            // โชว์ผลลัพธ์
+            document.getElementById('resultCard').classList.remove('d-none');
+            document.getElementById('resultContent').innerHTML = `
+                <div class="alert ${glm.class.includes('Yes') ? 'alert-danger' : 'alert-success'} mb-3">
+                    <strong>การพยากรณ์ GLM:</strong> ${glm.class} (ความน่าจะเป็น ${glm.probability}%)
+                </div>
+                <div class="p-3 bg-light border rounded">
+                    <p class="mb-1 text-danger"><strong>ค่าไต (CrCl):</strong> ${plan.renal_status}</p>
+                    <p class="mb-1"><strong>ขนาดยารวมที่ปรับแล้ว:</strong> ${plan.adjusted_daily_dose} ${plan.unit}/วัน</p>
+                    <hr>
+                    <p class="text-success mb-1"><strong>ATC:</strong> ${plan.atc_instruction}</p>
+                    <p class="text-warning text-darken mb-0"><strong>PRN:</strong> ${plan.prn_instruction}</p>
+                </div>
+                <div class="mt-3 text-end"><button type="button" class="btn btn-secondary" onclick="window.print()">พิมพ์รายงาน</button></div>
+            `;
+            document.getElementById('assessmentForm').reset();
+            alert('บันทึกข้อมูลและคำนวณสำเร็จแล้ว!');
+        }).catch(err => alert("บันทึกข้อมูลล้มเหลว: " + err.message));
+    });
+
+    // ----------------------------------------------------
+    // 5. ดึงคลังข้อมูลประวัติ
+    // ----------------------------------------------------
+    function loadArchive() {
+        const content = document.getElementById('archiveContent');
+        content.innerHTML = "กำลังโหลดข้อมูลจาก Firestore...";
+        
+        db.collection('assessments').orderBy('created_at', 'desc').limit(20).get().then(snapshot => {
+            if(snapshot.empty) { content.innerHTML = "ไม่มีประวัติการรักษา"; return; }
+            let html = '<table class="table"><thead><tr><th>วันที่</th><th>บัตรประชาชน</th><th>คะแนนปวด</th><th>ยาที่จ่าย</th></tr></thead><tbody>';
+            snapshot.forEach(doc => {
+                let d = doc.data();
+                let dateStr = d.created_at ? d.created_at.toDate().toLocaleString('th-TH') : 'N/A';
+                html += `<tr><td>${dateStr}</td><td>${d.id_card}</td><td>${d.pain_score}/10</td><td>${d.plan.atc_instruction}</td></tr>`;
+            });
+            html += '</tbody></table>';
+            content.innerHTML = html;
+        });
+    }
+
+    // ----------------------------------------------------
+    // 6. Admin เพิ่มผู้ใช้งาน (ผ่าน Secondary App)
+    // ----------------------------------------------------
+    document.getElementById('addUserForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        let email = document.getElementById('newEmail').value;
+        let pass = document.getElementById('newPass').value;
+        let role = document.getElementById('newRole').value;
+
+        // ใช้ Secondary App สมัคร เพื่อไม่ให้แอดมินคนปัจจุบันหลุดล็อคอิน
+        secondaryApp.auth().createUserWithEmailAndPassword(email, pass).then(userCred => {
+            // บันทึก Role ลงฐานข้อมูลหลัก
+            db.collection('users').doc(userCred.user.uid).set({ email: email, role: role }).then(() => {
+                alert('สร้างผู้ใช้งานสำเร็จ!');
+                document.getElementById('addUserForm').reset();
+                secondaryApp.auth().signOut();
+            });
+        }).catch(err => alert("สร้างผู้ใช้ล้มเหลว: " + err.message));
+    });
+
+    // Sidebar Navigation UI Switcher
+    ['nav-assess', 'nav-archive', 'nav-users'].forEach(id => {
+        const el = document.getElementById(id);
+        if(el) {
+            el.addEventListener('click', function(e) {
+                document.querySelectorAll('.sidebar-menu .nav-link').forEach(nav => nav.classList.remove('active'));
+                this.classList.add('active');
+                document.getElementById('pageTitle').innerText = this.innerText;
+            });
+        }
+    });
+
+</script>
+</body>
+</html>
